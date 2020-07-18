@@ -19,6 +19,8 @@ Design Decisions:
 import random
 import math
 import curses
+import tkinter as tk
+import copy
 
 # 3rd party modules
 import gym
@@ -34,57 +36,90 @@ class MeetEnv(gym.Env):
 
         # TODO: better config handling
         self.episode_over = False
+        self.multi_agent_init()
+        self.init_args()
 
-    def init_curses(self):
-        self.stdscr = curses.initscr()
-        curses.start_color()
-        curses.use_default_colors()
-        curses.init_pair(1, curses.COLOR_RED, -1)
-        curses.init_pair(2, curses.COLOR_YELLOW, -1)
-        curses.init_pair(3, curses.COLOR_CYAN, -1)
-        curses.init_pair(4, curses.COLOR_GREEN, -1)
+        self.init_windows()
 
-    def init_args(self, parser):
-        env = parser.add_argument_group('Prey Predator task')
+    def init_windows(self):
+        self.windows = tk.Tk()
+        self.windows.title("simple_ma_env")
+        self.space=100
+        self.colors = ["red", 'yellow']
+        self.windows.geometry("500x500")
+        self.canvas = tk.Canvas(self.windows, bg='white', height=500, width=500)
+        for i in range(self.dim + 1):
+            self.canvas.create_line(0, 0 + i * self.space, 500, 0 + i * self.space)
+            self.canvas.create_line(0 + i * self.space, 0, 0 + i * self.space, 500)
+        self.ovals = []
+        for i in range(self.n_player):
+            self.ovals.append(self.canvas.create_oval(self.players_pos[i][1] * self.space, self.players_pos[i][0] * self.space,
+                                            self.players_pos[i][1] * self.space + self.space,self.players_pos[i][0] * self.space + self.space,
+                                            fill=self.colors[i]))
+        self.canvas.pack()
+
+    def init_args(self):
         self.dim=5
+        self.dims = (self.dim, self.dim)
+        self.naction = 5
         self.vision=2
         self.reward=10
-
-    def multi_agent_init(self, args):
+        self.players_pos = [[0, 0], [self.dim - 1, self.dim - 1]]
+        self.prev_players_pos=copy.deepcopy(self.players_pos)
+        self.grid = self._set_grid()
+        for i in range(self.n_player):
+            player_i_x, player_i_y = self.players_pos[i][0], self.players_pos[i][1]
+            self.grid[player_i_x][player_i_y] = self.grid[player_i_x][player_i_y] + str(i)
+    def multi_agent_init(self):
         self.n_player = 2
-        self.dims= (self.dim, self.dim)
-        self.naction = 5
+
+
         return
 
     def reset(self):
+        self.windows.update()
         self.episode_over = False
-        self.grid=self._set_grid()
-        self.players_pos=[[0,0],[self.dim-1,self.dim-1]]
+        self.init_args()
+        self.multi_agent_init()
+        for oval in self.ovals:
+            self.canvas.delete(oval)
+        self.ovals=[]
         for i in range(self.n_player):
-            player_i_x,player_i_y=self.players_pos[i][0],self.players_pos[i][1]
-            self.grid[player_i_x][player_i_y] = self.grid[player_i_x][player_i_y]  + str(i)
+            self.ovals.append(self.canvas.create_oval(self.players_pos[i][1] * self.space, self.players_pos[i][0] * self.space,
+                                            self.players_pos[i][1] * self.space + self.space,self.players_pos[i][0] * self.space + self.space,
+                                            fill=self.colors[i]))
+
         return self._get_obs()
 
     def _get_obs(self):
-        return  [self.players_pos[i] for i in range(self.n_player)].insert(0, self.grid)
+        poses= [self.players_pos[i] for i in range(self.n_player)]
+        return  poses,self.grid
 
     def step(self, action):
         if self.episode_over:
             raise RuntimeError("Episode is done")
         for i, a in enumerate(action):
             self._take_action(i, a)
-        assert np.all(action <= self.naction), "Actions should be in the range [0,naction)."
+
+
         self.obs = self._get_obs()
         self.episode_over = False
         if(self._get_reward()==self.reward) :self.episode_over=True
         debug = {'player_pos':self.players_pos,'grid':self.grid}
+
+        for i in range(self.n_player):
+            self.canvas.move(self.ovals[i], (self.players_pos[i][1] - self.prev_players_pos[i][1]) * self.space,
+                             (self.players_pos[i][0] - self.prev_players_pos[i][0]) * self.space)
         return self.obs, self._get_reward(), self.episode_over, debug
 
     def _set_grid(self):
-        self.grid=np.full(self.dims,"",dtype=np.object)
+        grid=np.full(self.dims,"",dtype=np.object)
+        return  grid
 
     def _take_action(self, idx, act):
-
+        self.prev_players_pos[idx]=[self.players_pos[idx][0],self.players_pos[idx][1]]
+        print(id(self.prev_players_pos[idx][0]))
+        print(self.players_pos[idx][0])
         player_i_x,player_i_y=self.players_pos[idx]
         if act==0:
             pass
@@ -93,25 +128,29 @@ class MeetEnv(gym.Env):
             self.grid[player_i_x - 1][player_i_y] =self.grid[player_i_x - 1][player_i_y]+ str(idx)
             self.grid[player_i_x ][player_i_y] = self.grid[player_i_x ][player_i_y].replace(str(idx),"")
             self.players_pos[idx]= [player_i_x - 1,player_i_y]
-        # RIGHT
-        elif act == 2 and player_i_y != self.dims[1]-1:
-            self.grid[player_i_x][player_i_y+1] = self.grid[player_i_x ][player_i_y+1] + str(idx)
-            self.grid[player_i_x][player_i_y] = self.grid[player_i_x][player_i_y].replace(str(idx), "")
-            self.players_pos[idx] = [player_i_x, player_i_y+1]
         # DOWN
-        elif act == 3 and player_i_x != self.dims[0] - 1:
-            self.grid[player_i_x+1][player_i_y ] = self.grid[player_i_x+1][player_i_y ] + str(idx)
+        elif act == 2 and player_i_x != self.dims[0] - 1 :
+            self.grid[player_i_x + 1][player_i_y] = self.grid[player_i_x + 1][player_i_y] + str(idx)
             self.grid[player_i_x][player_i_y] = self.grid[player_i_x][player_i_y].replace(str(idx), "")
-            self.players_pos[idx] = [player_i_x+1, player_i_y]
+            self.players_pos[idx] = [player_i_x + 1, player_i_y]
         # LEFT
-        elif act==4 and player_i_y != 0:
-            self.grid[player_i_x][player_i_y-1 ] = self.grid[player_i_x][player_i_y-1 ] + str(idx)
+        elif act == 3 and player_i_y != 0:
+            self.grid[player_i_x][player_i_y - 1] = self.grid[player_i_x][player_i_y - 1] + str(idx)
             self.grid[player_i_x][player_i_y] = self.grid[player_i_x][player_i_y].replace(str(idx), "")
-            self.players_pos[idx] = [player_i_x , player_i_y-1]
+            self.players_pos[idx] = [player_i_x, player_i_y - 1]
+        # RIGHT
+        elif act==4 and player_i_y != self.dims[1]-1:
+            self.grid[player_i_x][player_i_y + 1] = self.grid[player_i_x][player_i_y + 1] + str(idx)
+            self.grid[player_i_x][player_i_y] = self.grid[player_i_x][player_i_y].replace(str(idx), "")
+            self.players_pos[idx] = [player_i_x, player_i_y + 1]
+
 
 
     def _get_reward(self):
-        if((self.players_pos[0]==self.players_pos[1]).all()):
+        if(((np.array(self.players_pos[0])==np.array(self.players_pos[1]))).all()):
             return self.reward
+        else: return  0
+    def render(self, mode='human'):
+        self.windows.update()
 
 
