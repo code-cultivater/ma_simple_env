@@ -40,7 +40,21 @@ class MeetEnv(gym.Env):
         self.init_args()
 
         self.init_windows()
-
+    def get_env_info(self):
+        env_info={
+            "n_actions":self.naction,
+            "n_agents":self.n_player,
+            "state_shape":2*self.n_player,
+            "obs_shape":2*self.n_player,
+            "episode_limit":20,
+        }
+        return env_info
+    def get_obs(self):
+        return [np.concatenate(copy.deepcopy(self.players_pos)),np.concatenate(copy.deepcopy(self.players_pos))]
+    def get_state(self):
+        return np.concatenate(copy.deepcopy(self.players_pos))##???
+    def get_avail_agent_actions(self,agent_id):
+        return np.ones(self.naction)
     def init_windows(self):
         self.windows = tk.Tk()
         self.windows.title("simple_ma_env")
@@ -77,7 +91,7 @@ class MeetEnv(gym.Env):
         return
 
     def reset(self):
-        self.windows.update()
+
         self.episode_over = False
         self.init_args()
         self.multi_agent_init()
@@ -90,6 +104,7 @@ class MeetEnv(gym.Env):
                                             fill=self.colors[i]))
 
         return self._get_obs()
+
 
     def _get_obs(self):
         poses= [self.players_pos[i] for i in range(self.n_player)]
@@ -118,8 +133,7 @@ class MeetEnv(gym.Env):
 
     def _take_action(self, idx, act):
         self.prev_players_pos[idx]=[self.players_pos[idx][0],self.players_pos[idx][1]]
-        print(id(self.prev_players_pos[idx][0]))
-        print(self.players_pos[idx][0])
+
         player_i_x,player_i_y=self.players_pos[idx]
         if act==0:
             pass
